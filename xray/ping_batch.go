@@ -371,7 +371,13 @@ func probeOutbound(
 ) PingBatchResult {
 	httpTimeout := time.Second * time.Duration(timeout)
 	transport := &http.Transport{
-		DisableKeepAlives: true,
+		// Keep-alives stay ON, deliberately. PingHTTPRequest sends two
+		// requests and keeps the better one; the second is only worth
+		// anything because it reuses this connection and so reports latency
+		// without the handshake that dominates the first.
+		DisableKeepAlives: false,
+		MaxIdleConns:      1,
+		IdleConnTimeout:   httpTimeout,
 		DialContext: func(
 			ctx context.Context,
 			network string,

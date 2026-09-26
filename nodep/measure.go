@@ -1,6 +1,7 @@
 package nodep
 
 import (
+	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -49,7 +50,42 @@ func CoreHTTPClient(timeout time.Duration, proxy string) (*http.Client, error) {
 	return c, nil
 }
 
+// PingHTTPRequest measures a proxy by carrying two HEAD requests through it
+// and keeping the better one.
+//
+// One request measures the wrong thing. It pays for the whole setup -- TCP,
+// TLS, and for reality or xhttp a good deal more -- and that cost swamps the
+// latency it is supposed to report: the same node measured twice in a row can
+// differ by hundreds of milliseconds, and a nearby node with an expensive
+// handshake ranks below a distant one with a cheap one. Happ, which the owner
+// trusts to report this correctly, sends two requests over one session and
+// takes the best; its own settings screen explains why ("the second request
+// measures pure connection speed via an already established TLS connection").
+// This does the same, which is also why the caller must leave keep-alives on.
 func PingHTTPRequest(c *http.Client, url string, timeout int) (int64, error) {
+	best := int64(-1)
+	var lastErr error
+	var lastDelay int64 = PingDelayError
+	for range 2 {
+		delay, err := pingHTTPOnce(c, url, timeout)
+		if err != nil {
+			lastErr = err
+			lastDelay = delay
+			// A failed first attempt is worth a second one (a proxy that has
+			// just come up, a lost SYN); two failures are an answer.
+			continue
+		}
+		if best < 0 || delay < best {
+			best = delay
+		}
+	}
+	if best < 0 {
+		return lastDelay, lastErr
+	}
+	return best, nil
+}
+
+func pingHTTPOnce(c *http.Client, url string, timeout int) (int64, error) {
 	start := time.Now()
 	req, err := http.NewRequest("HEAD", url, nil)
 	if err != nil {
@@ -64,6 +100,10 @@ func PingHTTPRequest(c *http.Client, url string, timeout int) (int64, error) {
 		}
 		return PingDelayError, err
 	}
+	// Drained, not just closed: an unread body keeps the connection out of the
+	// idle pool, and the second request would then pay for a new one -- which
+	// is the entire measurement.
+	io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
 	response.Body.Close()
 	return delay, nil
 }

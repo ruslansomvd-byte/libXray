@@ -35,7 +35,10 @@ func TestPingBatchLocationUsesEachForcedOutbound(t *testing.T) {
 	if second.Success || second.LocationJSON != nil || second.LocationError == "" {
 		t.Fatalf("blocked outbound escaped through another client: %+v", second)
 	}
-	if heads.Load() != 1 || gets.Load() != 1 {
+	// Two HEADs, one GET: the latency probe deliberately sends two requests
+	// over the same connection and keeps the better one (see
+	// nodep.PingHTTPRequest), while the location probe stays a single GET.
+	if heads.Load() != 2 || gets.Load() != 1 {
 		t.Fatalf("requests = HEAD %d GET %d", heads.Load(), gets.Load())
 	}
 }

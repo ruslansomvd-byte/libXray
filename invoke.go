@@ -47,6 +47,8 @@ func Invoke(requestJSON string) string {
 		return invokeCountGeoData(request.Payload)
 	case LibXrayMethodPingBatch:
 		return invokePingBatch(request.Payload)
+	case LibXrayMethodPingLive:
+		return invokePingLive(request.Payload)
 	case LibXrayMethodTestXray:
 		return invokeTestXray(request.Payload)
 	case LibXrayMethodRunXray:
@@ -180,6 +182,27 @@ func invokeCountGeoData(payload json.RawMessage) string {
 	}
 	err = geo.CountGeoData(request.DatDir, request.Name, request.GeoType)
 	return encodeInvokeNoDataResponse(err)
+}
+
+func invokePingLive(payload json.RawMessage) string {
+	request, err := decodePayload[PingLiveRequest](payload)
+	if err != nil {
+		return encodeInvokeResponse(nil, err)
+	}
+	results, err := xray.PingLive(request.Tags, request.Timeout, request.URL)
+	if err != nil {
+		return encodeInvokeResponse(nil, err)
+	}
+	responseResults := make([]PingLiveItemResponse, len(results))
+	for i, result := range results {
+		responseResults[i] = PingLiveItemResponse{
+			Tag:     result.Tag,
+			Success: result.Success,
+			Delay:   result.Delay,
+			Error:   result.Error,
+		}
+	}
+	return encodeInvokeResponse(PingLiveResponse{Results: responseResults}, nil)
 }
 
 func invokePingBatch(payload json.RawMessage) string {

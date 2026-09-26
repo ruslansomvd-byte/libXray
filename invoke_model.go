@@ -16,6 +16,7 @@ const (
 	LibXrayMethodGenerateAgeKeyPair          LibXrayMethod = "generateAgeKeyPair"
 	LibXrayMethodCountGeoData                LibXrayMethod = "countGeoData"
 	LibXrayMethodPingBatch                   LibXrayMethod = "pingBatch"
+	LibXrayMethodPingLive                    LibXrayMethod = "pingLive"
 	LibXrayMethodTestXray                    LibXrayMethod = "testXray"
 	LibXrayMethodRunXray                     LibXrayMethod = "runXray"
 	LibXrayMethodStopXray                    LibXrayMethod = "stopXray"
@@ -98,6 +99,25 @@ type PingBatchItemResponse struct {
 	Error         string  `json:"error,omitempty"`
 	LocationJSON  *string `json:"locationJson,omitempty"`
 	LocationError string  `json:"locationError,omitempty"`
+}
+
+// PingLiveRequest measures outbounds of the instance that is already running,
+// by tag. See xray.PingLive for why this exists next to PingBatchRequest.
+type PingLiveRequest struct {
+	Tags    []string `json:"tags,omitempty"`
+	Timeout int      `json:"timeout,omitempty"`
+	URL     string   `json:"url,omitempty"`
+}
+
+type PingLiveResponse struct {
+	Results []PingLiveItemResponse `json:"results,omitempty"`
+}
+
+type PingLiveItemResponse struct {
+	Tag     string `json:"tag,omitempty"`
+	Success bool   `json:"success"`
+	Delay   int64  `json:"delay"`
+	Error   string `json:"error,omitempty"`
 }
 
 type RunXrayRequest struct {
