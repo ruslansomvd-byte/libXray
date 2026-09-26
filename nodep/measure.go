@@ -63,24 +63,18 @@ func CoreHTTPClient(timeout time.Duration, proxy string) (*http.Client, error) {
 // measures pure connection speed via an already established TLS connection").
 // This does the same, which is also why the caller must leave keep-alives on.
 func PingHTTPRequest(c *http.Client, url string, timeout int) (int64, error) {
-	best := int64(-1)
-	var lastErr error
-	var lastDelay int64 = PingDelayError
-	for range 2 {
-		delay, err := pingHTTPOnce(c, url, timeout)
-		if err != nil {
-			lastErr = err
-			lastDelay = delay
-			// A failed first attempt is worth a second one (a proxy that has
-			// just come up, a lost SYN); two failures are an answer.
-			continue
-		}
-		if best < 0 || delay < best {
-			best = delay
-		}
+	best, err := pingHTTPOnce(c, url, timeout)
+	if err != nil {
+		// One failure is the answer. Trying again only doubles what a dead
+		// node costs -- with a six second timeout and a subscription full of
+		// them, retrying turned a sweep into minutes and the list looked
+		// frozen (owner's phone, 2026-09-26).
+		return best, err
 	}
-	if best < 0 {
-		return lastDelay, lastErr
+	// The second request is the measurement: it reuses the connection the
+	// first one paid for, so it reports latency rather than setup.
+	if second, err := pingHTTPOnce(c, url, timeout); err == nil && second < best {
+		best = second
 	}
 	return best, nil
 }

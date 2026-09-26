@@ -399,6 +399,14 @@ func probeOutbound(
 	client := &http.Client{
 		Transport: transport,
 		Timeout:   httpTimeout,
+		// Never follow one. A probe URL that answers with a redirect would
+		// otherwise be measured as "the redirect plus wherever it leads",
+		// and `http://1.1.1.1/` answers HEAD with a 301 to its own https
+		// address that then hangs until the timeout -- which is how every
+		// node came back either enormous or unmeasured.
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 	delay, err := nodep.PingHTTPRequest(client, targetURL, timeout)
 	result := PingBatchResult{Success: true, Delay: delay}
