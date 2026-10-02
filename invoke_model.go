@@ -22,6 +22,14 @@ const (
 	LibXrayMethodStopXray                    LibXrayMethod = "stopXray"
 	LibXrayMethodXrayVersion                 LibXrayMethod = "xrayVersion"
 	LibXrayMethodGetXrayState                LibXrayMethod = "getXrayState"
+
+	// Движок AmneziaWG. Живёт рядом с Xray в той же библиотеке и делит с
+	// ним один туннель: двух расширений туннеля мы намеренно избегаем.
+	LibXrayMethodAwgStart     LibXrayMethod = "awgStart"
+	LibXrayMethodAwgStop      LibXrayMethod = "awgStop"
+	LibXrayMethodAwgState     LibXrayMethod = "awgState"
+	LibXrayMethodAwgStats     LibXrayMethod = "awgStats"
+	LibXrayMethodAwgParseConf LibXrayMethod = "awgParseConf"
 )
 
 type LibXrayInvokeRequest struct {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/xtls/libxray/awg"
 	"github.com/xtls/libxray/geo"
 	"github.com/xtls/libxray/nodep"
 	"github.com/xtls/libxray/share"
@@ -59,6 +60,16 @@ func Invoke(requestJSON string) string {
 		return encodeInvokeResponse(&XrayVersionResponse{Version: xray.XrayVersion()}, nil)
 	case LibXrayMethodGetXrayState:
 		return encodeInvokeResponse(&GetXrayStateResponse{Running: xray.GetXrayState()}, nil)
+	case LibXrayMethodAwgStart:
+		return invokeAwgStart(request.Payload)
+	case LibXrayMethodAwgStop:
+		return invokeAwgStop()
+	case LibXrayMethodAwgState:
+		return invokeAwgState()
+	case LibXrayMethodAwgStats:
+		return invokeAwgStats()
+	case LibXrayMethodAwgParseConf:
+		return invokeAwgParseConf(request.Payload)
 	default:
 		return encodeInvokeResponse(nil, errors.New("unknown method"))
 	}
@@ -258,4 +269,53 @@ func invokeRunXray(payload json.RawMessage) string {
 	}
 	err = xray.RunXray(request.XrayJson)
 	return encodeInvokeNoDataResponse(err)
+}
+
+// Методы движка AmneziaWG.
+//
+// Отдельный движок, а не выход Xray: у Xray нет подключаемых протоколов,
+// а второе расширение туннеля нам нельзя. Поэтому запускаем его рядом и
+// отдаём ему тот же туннель.
+
+func invokeAwgStart(payload json.RawMessage) string {
+	request, err := decodePayload[awg.StartRequest](payload)
+	if err != nil {
+		return encodeInvokeNoDataResponse(err)
+	}
+	return encodeInvokeNoDataResponse(awg.Start(request))
+}
+
+func invokeAwgStop() string {
+	return encodeInvokeNoDataResponse(awg.Stop())
+}
+
+func invokeAwgState() string {
+	return encodeInvokeResponse(awg.IsRunning(), nil)
+}
+
+func invokeAwgStats() string {
+	stats, err := awg.GetStats()
+	if err != nil {
+		return encodeInvokeNoDataResponse(err)
+	}
+	return encodeInvokeResponse(stats, nil)
+}
+
+// invokeAwgParseConf разбирает .conf от панели и отдаёт приложению и
+// конфигурацию для ядра, и настройки интерфейса.
+//
+// Нужно до запуска: адреса, DNS и MTU надо выставить расширению
+// туннеля, а ядро их не принимает.
+func invokeAwgParseConf(payload json.RawMessage) string {
+	request, err := decodePayload[struct {
+		Conf string `json:"conf"`
+	}](payload)
+	if err != nil {
+		return encodeInvokeNoDataResponse(err)
+	}
+	parsed, err := awg.ParseConf(request.Conf)
+	if err != nil {
+		return encodeInvokeNoDataResponse(err)
+	}
+	return encodeInvokeResponse(parsed, nil)
 }
