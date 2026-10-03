@@ -82,11 +82,6 @@ func Start(req StartRequest) error {
 		return err
 	}
 
-	mtu := req.MTU
-	if mtu <= 0 {
-		mtu = device.DefaultMTU
-	}
-
 	// Дублируем описатель: системный мы закрывать не имеем права, его
 	// жизненным циклом управляет расширение туннеля.
 	dupFd, err := dupTunFd(req.TunFd)
@@ -94,7 +89,13 @@ func Start(req StartRequest) error {
 		return fmt.Errorf("не удалось продублировать описатель туннеля: %w", err)
 	}
 	file := os.NewFile(uintptr(dupFd), "awg-tun")
-	tunDev, err := tun.CreateTUNFromFile(file, mtu)
+	// MTU НЕ задаём: при mtu > 0 библиотека сама вызывает ioctl на
+	// интерфейсе, а внутри расширения туннеля это запрещено —
+	// «failed to set MTU on utun32: operation not permitted», и туннель
+	// не поднимался вовсе. MTU там уже выставлен системой: на iOS через
+	// setTunnelNetworkSettings, на Android через VpnService.Builder.
+	// Ноль означает «оставить как есть».
+	tunDev, err := tun.CreateTUNFromFile(file, 0)
 	if err != nil {
 		_ = file.Close()
 		return fmt.Errorf("не удалось создать туннель: %w", err)
