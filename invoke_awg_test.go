@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/xtls/libxray/awg"
 )
 
 // Сквозная проверка: метод доходит от JSON-конверта до движка и обратно.
@@ -113,5 +115,31 @@ func TestAwgSocksЧерезДиспетчер(t *testing.T) {
 
 	if r = callInvoke(t, "awgSocksStopAll", ""); !r.Success {
 		t.Fatalf("awgSocksStopAll вернул ошибку: %s", r.Err)
+	}
+}
+
+func TestRunXrayПоднимаетИГаситАмнезию(t *testing.T) {
+	conf := "[Interface]\nAddress = 10.8.3.6/32\nMTU = 1280\n" +
+		"PrivateKey = qJ8hFzK3vN2mQ5xR7tY9uI0oP1aS2dF4gH6jK8lZ0wE=\nJc = 5\n" +
+		"[Peer]\nPublicKey = 3xH5kL7mN9pQ1rS3tU5vW7xY9zA1bC3dE5fG7hJ9kM0=\n" +
+		"AllowedIPs = 0.0.0.0/0\nEndpoint = 127.0.0.1:9\n"
+	xrayJSON, _ := json.Marshal(map[string]any{
+		"log":       map[string]any{"loglevel": "none"},
+		"outbounds": []any{map[string]any{"tag": "awg-1", "protocol": "socks", "awgConf": conf}},
+	})
+	payload, _ := json.Marshal(map[string]string{"xrayJson": string(xrayJSON)})
+	t.Cleanup(func() { callInvoke(t, "stopXray", ""); awg.SocksStopAll() })
+
+	if r := callInvoke(t, "runXray", string(payload)); !r.Success {
+		t.Fatalf("ядро с выходом-амнезией не запустилось: %s", r.Err)
+	}
+	if awg.SocksRunning() != 1 {
+		t.Fatalf("под ядро должна подняться одна амнезия, поднято %d", awg.SocksRunning())
+	}
+	if r := callInvoke(t, "stopXray", ""); !r.Success {
+		t.Fatalf("stopXray: %s", r.Err)
+	}
+	if awg.SocksRunning() != 0 {
+		t.Fatal("ядро остановлено, а амнезия осталась висеть")
 	}
 }

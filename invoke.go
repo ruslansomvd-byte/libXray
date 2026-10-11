@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/xtls/libxray/awg"
 	"github.com/xtls/libxray/geo"
@@ -55,7 +56,7 @@ func Invoke(requestJSON string) string {
 	case LibXrayMethodRunXray:
 		return invokeRunXray(request.Payload)
 	case LibXrayMethodStopXray:
-		return encodeInvokeNoDataResponse(xray.StopXray())
+		return invokeStopXray()
 	case LibXrayMethodXrayVersion:
 		return encodeInvokeResponse(&XrayVersionResponse{Version: xray.XrayVersion()}, nil)
 	case LibXrayMethodGetXrayState:
@@ -229,8 +230,16 @@ func invokePingBatch(payload json.RawMessage) string {
 
 	configs := make([]xray.PingBatchItem, len(request.Configs))
 	for i, config := range request.Configs {
+		// Амнезия поднимается только на время пробы. Если тот же ключ уже
+		// держит туннель в этом процессе, берётся его движок, а не второй.
+		prepared, release, err := awg.PrepareXrayJSON(config.XrayJson)
+		if err != nil {
+			prepared = config.XrayJson
+		} else {
+			defer release()
+		}
 		configs[i] = xray.PingBatchItem{
-			XrayJSON:    config.XrayJson,
+			XrayJSON:    prepared,
 			OutboundTag: config.OutboundTag,
 		}
 	}
@@ -267,12 +276,40 @@ func invokeTestXray(payload json.RawMessage) string {
 	return encodeInvokeNoDataResponse(err)
 }
 
+// awgRelease отпускает амнезии, поднятые под работающее ядро.
+var (
+	awgReleaseMu sync.Mutex
+	awgRelease   = func() {}
+)
+
 func invokeRunXray(payload json.RawMessage) string {
 	request, err := decodePayload[RunXrayRequest](payload)
 	if err != nil {
 		return encodeInvokeNoDataResponse(err)
 	}
-	err = xray.RunXray(request.XrayJson)
+	// Outbounds с пометкой awgConf становятся socks на поднятую амнезию;
+	// конфигурация без пометки проходит как есть.
+	prepared, release, err := awg.PrepareXrayJSON(request.XrayJson)
+	if err != nil {
+		return encodeInvokeNoDataResponse(err)
+	}
+	if err = xray.RunXray(prepared); err != nil {
+		release()
+		return encodeInvokeNoDataResponse(err)
+	}
+	awgReleaseMu.Lock()
+	awgRelease = release
+	awgReleaseMu.Unlock()
+	return encodeInvokeNoDataResponse(nil)
+}
+
+func invokeStopXray() string {
+	err := xray.StopXray()
+	awgReleaseMu.Lock()
+	release := awgRelease
+	awgRelease = func() {}
+	awgReleaseMu.Unlock()
+	release()
 	return encodeInvokeNoDataResponse(err)
 }
 
