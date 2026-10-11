@@ -257,7 +257,60 @@ func StartUserspace(confText string) (*Userspace, error) {
 		dev.Close()
 		return nil, err
 	}
-	return &Userspace{dev: dev, socks: s}, nil
+	u := &Userspace{dev: dev, socks: s}
+	if u.waitHandshake(handshakeWait) {
+		sacrificeFirstPacket(tnet, dns)
+	}
+	return u, nil
+}
+
+// sacrificeFirstPacket отправляет в туннель один пакет, которому суждено
+// пропасть.
+//
+// Замер 11.10 (cmd/awgdns, ключ владельца, сервер amnz): после рукопожатия
+// САМЫЙ ПЕРВЫЙ пакет данных не доходит — сырой UDP к 1.1.1.1:53 первым ждёт
+// 6 с впустую, вторым отвечает за 96 мс; первое разрешение имени 5,1 с,
+// следующие ~90 мс. В режиме туннеля это один повтор TCP и незаметно, а
+// проба пинга с таймаутом 3 с из-за этого всегда проваливалась. Пусть
+// пропадает этот, а не первый запрос пользователя.
+func sacrificeFirstPacket(tnet *netstack.Net, dns []netip.Addr) {
+	target := netip.MustParseAddr("1.1.1.1")
+	for _, d := range dns {
+		if d.Is4() {
+			target = d
+			break
+		}
+	}
+	c, err := tnet.DialUDPAddrPort(netip.AddrPort{}, netip.AddrPortFrom(target, 53))
+	if err != nil {
+		return
+	}
+	// Пустой запрос DNS (корень, тип A): что бы ни случилось с ответом, он
+	// никому не нужен.
+	_, _ = c.Write([]byte{0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1})
+	_ = c.Close()
+	time.Sleep(50 * time.Millisecond)
+}
+
+// handshakeWait — сколько ждать рукопожатия перед тем, как отдать порт.
+//
+// Без ожидания первый DNS-запрос уходил в туннель раньше рукопожатия,
+// терялся, и DNS-клиент стека повторял его только через 5 с. Замер 11.10:
+// первый запрос по имени 5,33 с, второй 0,28 с; проба пинга приложения
+// ждёт 3 с — строка амнезии всегда оставалась без пинга. Рукопожатие само
+// занимает ~100 мс. Не дождались — порт отдаём всё равно: сервер может
+// лежать, и проба должна честно это показать, а не повиснуть здесь.
+var handshakeWait = 3 * time.Second
+
+func (u *Userspace) waitHandshake(limit time.Duration) bool {
+	deadline := time.Now().Add(limit)
+	for time.Now().Before(deadline) {
+		if u.Stats().LastHandshake > 0 {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
 }
 
 // Port — порт socks5 на 127.0.0.1.
