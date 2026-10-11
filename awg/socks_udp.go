@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amnezia-vpn/amneziawg-go/v3/tun/netstack"
+	"github.com/xtls/libxray/awg/netstack"
 )
 
 // udpAssociate обслуживает UDP ASSOCIATE (RFC 1928, раздел 7).

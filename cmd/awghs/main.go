@@ -12,8 +12,8 @@ import (
 
 	"github.com/amnezia-vpn/amneziawg-go/v3/conn"
 	"github.com/amnezia-vpn/amneziawg-go/v3/device"
-	"github.com/amnezia-vpn/amneziawg-go/v3/tun/netstack"
 	"github.com/xtls/libxray/awg"
+	"github.com/xtls/libxray/awg/netstack"
 )
 
 func main() {
