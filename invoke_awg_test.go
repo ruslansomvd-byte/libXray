@@ -154,3 +154,17 @@ func TestGoMemStatsЧерезДиспетчер(t *testing.T) {
 		t.Fatalf("ожидались цифры памяти, получено %v", r.Data)
 	}
 }
+
+func TestRoutesComplementЧерезДиспетчер(t *testing.T) {
+	r := callInvoke(t, "routesComplement", `{"exclude":["10.0.0.0/8"]}`)
+	if !r.Success {
+		t.Fatalf("routesComplement: %s", r.Err)
+	}
+	m := r.Data.(map[string]any)
+	if len(m["routes"].([]any)) != 8 || m["excluded"].(float64) != 1 {
+		t.Fatalf("ждал 8 сетей и 1 вычтенную, получено %v", r.Data)
+	}
+	if r = callInvoke(t, "routesComplement", `{"exclude":["мусор"]}`); r.Success {
+		t.Fatal("мусор принят за сеть")
+	}
+}

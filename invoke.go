@@ -74,6 +74,16 @@ func Invoke(requestJSON string) string {
 		return invokeAwgParseConf(request.Payload)
 	case LibXrayMethodAwgSocksStart:
 		return invokeAwgSocksStart(request.Payload)
+	case LibXrayMethodRoutesComplement:
+		req, err := decodePayload[awg.RoutesComplementRequest](request.Payload)
+		if err != nil {
+			return encodeInvokeResponse(nil, err)
+		}
+		resp, err := awg.RoutesComplement(req)
+		if err != nil {
+			return encodeInvokeResponse(nil, err)
+		}
+		return encodeInvokeResponse(&resp, nil)
 	case LibXrayMethodGoMemStats:
 		return encodeInvokeResponse(goMemStats(), nil)
 	case LibXrayMethodAwgSocksStopAll:

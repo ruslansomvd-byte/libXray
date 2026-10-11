@@ -35,6 +35,8 @@ const (
 	LibXrayMethodAwgSocksStopAll LibXrayMethod = "awgSocksStopAll"
 	// Доля Go в памяти процесса — чтобы знать, кто ест память расширения.
 	LibXrayMethodGoMemStats LibXrayMethod = "goMemStats"
+	// Дополнение маршрутов для Android ниже 13 (нет excludeRoute).
+	LibXrayMethodRoutesComplement LibXrayMethod = "routesComplement"
 )
 
 type LibXrayInvokeRequest struct {
