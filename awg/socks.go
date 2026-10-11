@@ -252,7 +252,7 @@ func StartUserspace(confText string) (*Userspace, error) {
 		dev.Close()
 		return nil, fmt.Errorf("не удалось поднять движок: %w", err)
 	}
-	s, err := ServeSocks(&stackNetwork{tnet: tnet, addrs: addrs})
+	s, err := ServeSocks(newCachedNetwork(&stackNetwork{tnet: tnet, addrs: addrs}))
 	if err != nil {
 		dev.Close()
 		return nil, err
