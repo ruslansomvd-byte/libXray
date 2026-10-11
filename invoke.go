@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 
 	"github.com/xtls/libxray/awg"
@@ -73,6 +74,8 @@ func Invoke(requestJSON string) string {
 		return invokeAwgParseConf(request.Payload)
 	case LibXrayMethodAwgSocksStart:
 		return invokeAwgSocksStart(request.Payload)
+	case LibXrayMethodGoMemStats:
+		return encodeInvokeResponse(goMemStats(), nil)
 	case LibXrayMethodAwgSocksStopAll:
 		awg.SocksStopAll()
 		return encodeInvokeNoDataResponse(nil)
@@ -374,4 +377,34 @@ func invokeAwgParseConf(payload json.RawMessage) string {
 		return encodeInvokeNoDataResponse(err)
 	}
 	return encodeInvokeResponse(parsed, nil)
+}
+
+// GoMemStats — сколько памяти держит Go в этом процессе, в мегабайтах.
+//
+// Расширение iOS умирает у потолка ~50 МБ на весь процесс, а туда входят и
+// Go (Xray, амнезия, её стек), и нативная часть (мост пакетов, Swift,
+// система). Без разбивки непонятно, что урезать.
+type GoMemStats struct {
+	HeapInuseMB float64 `json:"heapInuseMB"`
+	HeapSysMB   float64 `json:"heapSysMB"`
+	StackMB     float64 `json:"stackMB"`
+	SysMB       float64 `json:"sysMB"`
+	Goroutines  int     `json:"goroutines"`
+	NumGC       uint32  `json:"numGC"`
+	AwgEngines  int     `json:"awgEngines"`
+}
+
+func goMemStats() *GoMemStats {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	mb := func(b uint64) float64 { return float64(b) / (1 << 20) }
+	return &GoMemStats{
+		HeapInuseMB: mb(m.HeapInuse),
+		HeapSysMB:   mb(m.HeapSys),
+		StackMB:     mb(m.StackInuse),
+		SysMB:       mb(m.Sys),
+		Goroutines:  runtime.NumGoroutine(),
+		NumGC:       m.NumGC,
+		AwgEngines:  awg.SocksRunning(),
+	}
 }

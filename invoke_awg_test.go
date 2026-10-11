@@ -143,3 +143,14 @@ func TestRunXrayПоднимаетИГаситАмнезию(t *testing.T) {
 		t.Fatal("ядро остановлено, а амнезия осталась висеть")
 	}
 }
+
+func TestGoMemStatsЧерезДиспетчер(t *testing.T) {
+	r := callInvoke(t, "goMemStats", "")
+	if !r.Success {
+		t.Fatalf("goMemStats: %s", r.Err)
+	}
+	m, ok := r.Data.(map[string]any)
+	if !ok || m["sysMB"].(float64) <= 0 || m["goroutines"].(float64) < 1 {
+		t.Fatalf("ожидались цифры памяти, получено %v", r.Data)
+	}
+}

@@ -33,6 +33,8 @@ const (
 	// Амнезия как socks-выход Xray (см. awg/socks.go).
 	LibXrayMethodAwgSocksStart   LibXrayMethod = "awgSocksStart"
 	LibXrayMethodAwgSocksStopAll LibXrayMethod = "awgSocksStopAll"
+	// Доля Go в памяти процесса — чтобы знать, кто ест память расширения.
+	LibXrayMethodGoMemStats LibXrayMethod = "goMemStats"
 )
 
 type LibXrayInvokeRequest struct {
