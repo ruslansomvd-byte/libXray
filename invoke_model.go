@@ -30,6 +30,9 @@ const (
 	LibXrayMethodAwgState     LibXrayMethod = "awgState"
 	LibXrayMethodAwgStats     LibXrayMethod = "awgStats"
 	LibXrayMethodAwgParseConf LibXrayMethod = "awgParseConf"
+	// Амнезия как socks-выход Xray (см. awg/socks.go).
+	LibXrayMethodAwgSocksStart   LibXrayMethod = "awgSocksStart"
+	LibXrayMethodAwgSocksStopAll LibXrayMethod = "awgSocksStopAll"
 )
 
 type LibXrayInvokeRequest struct {

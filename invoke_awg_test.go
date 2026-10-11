@@ -88,3 +88,30 @@ func TestAwgParseConfЧерезДиспетчер(t *testing.T) {
 		t.Errorf("поля маскировки не дошли: %v", m["uapi"])
 	}
 }
+
+func TestAwgSocksЧерезДиспетчер(t *testing.T) {
+	conf := "[Interface]\nAddress = 10.8.3.6/32\nMTU = 1280\n" +
+		"PrivateKey = qJ8hFzK3vN2mQ5xR7tY9uI0oP1aS2dF4gH6jK8lZ0wE=\nJc = 5\n" +
+		"[Peer]\nPublicKey = 3xH5kL7mN9pQ1rS3tU5vW7xY9zA1bC3dE5fG7hJ9kM0=\n" +
+		"AllowedIPs = 0.0.0.0/0\nEndpoint = 127.0.0.1:9\n"
+	raw, _ := json.Marshal(map[string]string{"conf": conf})
+	t.Cleanup(func() { callInvoke(t, "awgSocksStopAll", "") })
+
+	r := callInvoke(t, "awgSocksStart", string(raw))
+	if !r.Success {
+		t.Fatalf("awgSocksStart не прошёл: %s", r.Err)
+	}
+	m, ok := r.Data.(map[string]any)
+	if !ok || m["port"].(float64) <= 0 {
+		t.Fatalf("ожидался порт, получено %v", r.Data)
+	}
+
+	// Мусор вместо ключа — внятный отказ, а не падение.
+	if r = callInvoke(t, "awgSocksStart", `{"conf":"мусор"}`); r.Success {
+		t.Fatal("мусор вместо ключа принят")
+	}
+
+	if r = callInvoke(t, "awgSocksStopAll", ""); !r.Success {
+		t.Fatalf("awgSocksStopAll вернул ошибку: %s", r.Err)
+	}
+}

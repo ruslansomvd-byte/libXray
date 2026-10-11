@@ -70,6 +70,11 @@ func Invoke(requestJSON string) string {
 		return invokeAwgStats()
 	case LibXrayMethodAwgParseConf:
 		return invokeAwgParseConf(request.Payload)
+	case LibXrayMethodAwgSocksStart:
+		return invokeAwgSocksStart(request.Payload)
+	case LibXrayMethodAwgSocksStopAll:
+		awg.SocksStopAll()
+		return encodeInvokeNoDataResponse(nil)
 	default:
 		return encodeInvokeResponse(nil, errors.New("unknown method"))
 	}
@@ -283,6 +288,20 @@ func invokeAwgStart(payload json.RawMessage) string {
 		return encodeInvokeNoDataResponse(err)
 	}
 	return encodeInvokeNoDataResponse(awg.Start(request))
+}
+
+// invokeAwgSocksStart поднимает амнезию в юзерспейсе и отдаёт порт socks5
+// на 127.0.0.1, который приложение подставляет в outbound Xray.
+func invokeAwgSocksStart(payload json.RawMessage) string {
+	request, err := decodePayload[awg.SocksStartRequest](payload)
+	if err != nil {
+		return encodeInvokeResponse(nil, err)
+	}
+	resp, err := awg.SocksStart(request)
+	if err != nil {
+		return encodeInvokeResponse(nil, err)
+	}
+	return encodeInvokeResponse(&resp, nil)
 }
 
 func invokeAwgStop() string {
