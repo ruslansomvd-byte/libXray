@@ -17,7 +17,6 @@ package awg
 import (
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 
 	"github.com/amnezia-vpn/amneziawg-go/v3/conn"
@@ -88,16 +87,11 @@ func Start(req StartRequest) error {
 	if err != nil {
 		return fmt.Errorf("не удалось продублировать описатель туннеля: %w", err)
 	}
-	file := os.NewFile(uintptr(dupFd), "awg-tun")
-	// MTU НЕ задаём: при mtu > 0 библиотека сама вызывает ioctl на
-	// интерфейсе, а внутри расширения туннеля это запрещено —
-	// «failed to set MTU on utun32: operation not permitted», и туннель
-	// не поднимался вовсе. MTU там уже выставлен системой: на iOS через
-	// setTunnelNetworkSettings, на Android через VpnService.Builder.
-	// Ноль означает «оставить как есть».
-	tunDev, err := tun.CreateTUNFromFile(file, 0)
+	// MTU не задаём: его уже выставила система (iOS --
+	// setTunnelNetworkSettings, Android -- VpnService.Builder), а менять его
+	// изнутри туннеля запрещено. См. newTunFromFD для каждой платформы.
+	tunDev, err := newTunFromFD(dupFd)
 	if err != nil {
-		_ = file.Close()
 		return fmt.Errorf("не удалось создать туннель: %w", err)
 	}
 
