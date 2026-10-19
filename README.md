@@ -443,9 +443,10 @@ by the `proxy` tag, and finally by the first outbound.
 }
 ```
 
-Each request accepts at most five configurations and tests all accepted
-configurations concurrently. Requests containing more than five configurations
-fail before any configuration is tested.
+Each request accepts at most 64 configurations and tests up to 16 of them
+concurrently. Requests containing more than 64 configurations fail before any
+configuration is tested. Requests run one at a time (they share the lifecycle
+lock), so send a whole list in one request rather than many small ones.
 
 The top-level response succeeds when the batch itself was accepted. Each item
 has its own result; `delay` is `10000` for an error and `11000` for a timeout.

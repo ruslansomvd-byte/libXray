@@ -22,7 +22,14 @@ import (
 )
 
 const (
-	maxPingBatchConfigs = 5
+	// The whole locations list in one call (SFERA, 19.10): the lifecycle
+	// lock below makes calls strictly serial, so with a cap of five a list of
+	// forty nodes was eight calls in a row and the app's per-call deadline
+	// turned the queue's tail into false timeouts.
+	maxPingBatchConfigs = 64
+	// Probes running at once inside a call: all of them at once compete for
+	// a phone's uplink and inflate each other's numbers.
+	maxPingBatchWorkers = 16
 )
 
 type PingBatchItem struct {
@@ -109,7 +116,7 @@ func PingBatchWithLocation(items []PingBatchItem, timeout int, targetURL, locati
 	}
 	defer server.Close()
 
-	workerCount := len(prepared)
+	workerCount := min(len(prepared), maxPingBatchWorkers)
 	jobs := make(chan preparedPingItem)
 	var workers sync.WaitGroup
 	workers.Add(workerCount)

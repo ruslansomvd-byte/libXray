@@ -280,17 +280,10 @@ func TestValidatePingBatchRequest(t *testing.T) {
 		},
 		{
 			name: "too many configs",
-			items: []PingBatchItem{
-				{},
-				{},
-				{},
-				{},
-				{},
-				{},
-			},
+			items:     make([]PingBatchItem, maxPingBatchConfigs+1),
 			timeout:   1,
 			targetURL: "https://example.com",
-			errorText: "more than 5 configs",
+			errorText: "more than 64 configs",
 		},
 	}
 
