@@ -32,6 +32,7 @@ const (
 	LibXrayMethodAwgParseConf LibXrayMethod = "awgParseConf"
 	// Амнезия как socks-выход Xray (см. awg/socks.go).
 	LibXrayMethodAwgSocksStart   LibXrayMethod = "awgSocksStart"
+	LibXrayMethodAwgPing         LibXrayMethod = "awgPing"
 	LibXrayMethodAwgSocksStopAll LibXrayMethod = "awgSocksStopAll"
 	// Доля Go в памяти процесса — чтобы знать, кто ест память расширения.
 	LibXrayMethodGoMemStats LibXrayMethod = "goMemStats"
