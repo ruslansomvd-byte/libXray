@@ -16,7 +16,10 @@ package awg
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -40,7 +43,14 @@ type Network interface {
 	LookupHost(ctx context.Context, host string) ([]string, error)
 }
 
-// SocksServer — минимальный socks5 без авторизации: CONNECT и UDP ASSOCIATE.
+// SocksServer — минимальный socks5 с логином и паролем: CONNECT и UDP ASSOCIATE.
+//
+// Логин и пароль случайные на каждый запуск (07.11). Без них любое
+// приложение на телефоне находило этот порт перебором 127.0.0.1 -- loopback
+// общий для всех приложений и на Android, и на iOS -- и узнавало, что VPN
+// включён и какой у него выход (так российские приложения и ловят VPN), а
+// заодно могло ходить через ключ клиента. Знает их только Xray: libXray
+// сам вписывает их в socks-выход (PrepareXrayJSON).
 //
 // UDP обязателен: правила приложения отправляют в выход и tcp, и udp, а
 // в прямом режиме амнезия возит UDP (звонки, игры, QUIC). Выход без UDP
@@ -53,6 +63,19 @@ type SocksServer struct {
 	ln   net.Listener
 	wg   sync.WaitGroup
 	once sync.Once
+	user string
+	pass string
+}
+
+// Credentials — логин и пароль этого запуска.
+func (s *SocksServer) Credentials() (user, pass string) { return s.user, s.pass }
+
+func randomToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // ServeSocks поднимает socks5 на 127.0.0.1 и свободном порту.
@@ -61,7 +84,17 @@ func ServeSocks(nw Network) (*SocksServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &SocksServer{nw: nw, ln: ln}
+	user, err := randomToken()
+	if err != nil {
+		_ = ln.Close()
+		return nil, err
+	}
+	pass, err := randomToken()
+	if err != nil {
+		_ = ln.Close()
+		return nil, err
+	}
+	s := &SocksServer{nw: nw, ln: ln, user: user, pass: pass}
 	s.wg.Add(1)
 	go s.accept()
 	return s, nil
@@ -95,7 +128,7 @@ func (s *SocksServer) handle(c net.Conn) {
 	defer c.Close()
 	_ = c.SetDeadline(time.Now().Add(15 * time.Second))
 
-	cmd, target, err := socksHandshake(c)
+	cmd, target, err := socksHandshake(c, s.user, s.pass)
 	if err != nil {
 		return
 	}
@@ -137,8 +170,18 @@ const (
 	cmdUDPAssociate = 3
 )
 
-// socksHandshake читает приветствие и запрос, возвращает команду и адрес.
-func socksHandshake(c net.Conn) (byte, string, error) {
+const (
+	methodUserPass   = 2
+	methodNoAccept   = 0xFF
+	authSubVersion   = 1
+	authStatusOK     = 0
+	authStatusFailed = 1
+)
+
+// socksHandshake читает приветствие, проверяет логин и пароль (RFC 1929) и
+// читает запрос; возвращает команду и адрес. Клиент без логина и пароля
+// получает «нет подходящего метода» и отказ.
+func socksHandshake(c net.Conn, user, pass string) (byte, string, error) {
 	hdr := make([]byte, 2)
 	if _, err := io.ReadFull(c, hdr); err != nil {
 		return 0, "", err
@@ -150,7 +193,20 @@ func socksHandshake(c net.Conn) (byte, string, error) {
 	if _, err := io.ReadFull(c, methods); err != nil {
 		return 0, "", err
 	}
-	if _, err := c.Write([]byte{5, 0}); err != nil {
+	offered := false
+	for _, m := range methods {
+		if m == methodUserPass {
+			offered = true
+		}
+	}
+	if !offered {
+		_, _ = c.Write([]byte{5, methodNoAccept})
+		return 0, "", errors.New("клиент без логина и пароля")
+	}
+	if _, err := c.Write([]byte{5, methodUserPass}); err != nil {
+		return 0, "", err
+	}
+	if err := checkUserPass(c, user, pass); err != nil {
 		return 0, "", err
 	}
 
@@ -172,6 +228,37 @@ func socksHandshake(c net.Conn) (byte, string, error) {
 		return 0, "", err
 	}
 	return req[1], net.JoinHostPort(host, strconv.Itoa(int(port))), nil
+}
+
+// checkUserPass -- подпереговоры RFC 1929: версия 1, логин, пароль.
+func checkUserPass(c net.Conn, user, pass string) error {
+	ver := make([]byte, 2)
+	if _, err := io.ReadFull(c, ver); err != nil {
+		return err
+	}
+	if ver[0] != authSubVersion {
+		return errors.New("не та версия авторизации")
+	}
+	u := make([]byte, ver[1])
+	if _, err := io.ReadFull(c, u); err != nil {
+		return err
+	}
+	pl := make([]byte, 1)
+	if _, err := io.ReadFull(c, pl); err != nil {
+		return err
+	}
+	p := make([]byte, pl[0])
+	if _, err := io.ReadFull(c, p); err != nil {
+		return err
+	}
+	okUser := subtle.ConstantTimeCompare(u, []byte(user)) == 1
+	okPass := subtle.ConstantTimeCompare(p, []byte(pass)) == 1
+	if !okUser || !okPass {
+		_, _ = c.Write([]byte{authSubVersion, authStatusFailed})
+		return errors.New("неверный логин или пароль")
+	}
+	_, err := c.Write([]byte{authSubVersion, authStatusOK})
+	return err
 }
 
 // readAddr читает адрес socks5 (тип уже прочитан) и порт.
@@ -315,6 +402,9 @@ func (u *Userspace) waitHandshake(limit time.Duration) bool {
 
 // Port — порт socks5 на 127.0.0.1.
 func (u *Userspace) Port() int { return u.socks.Port() }
+
+// Credentials -- логин и пароль socks этого движка.
+func (u *Userspace) Credentials() (string, string) { return u.socks.Credentials() }
 
 // Stats — счётчики и время последнего рукопожатия.
 func (u *Userspace) Stats() Stats {

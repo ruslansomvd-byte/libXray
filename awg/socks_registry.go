@@ -27,15 +27,23 @@ type SocksStartRequest struct {
 	Conf string `json:"conf"`
 }
 
-// SocksStartResponse — где её ждать.
+// SocksStartResponse — где её ждать и с каким логином и паролем.
 type SocksStartResponse struct {
-	Port int `json:"port"`
+	Port int    `json:"port"`
+	User string `json:"user"`
+	Pass string `json:"pass"`
+}
+
+// socksAccess -- куда и с чем подключаться к поднятой амнезии.
+type socksAccess struct {
+	port       int
+	user, pass string
 }
 
 // acquire поднимает амнезию для ключа (или берёт уже поднятую) и
 // возвращает порт и функцию, которая её отпускает. Отпускать можно
 // сколько угодно раз — сработает первый.
-func acquire(conf string) (int, func(), error) {
+func acquire(conf string) (socksAccess, func(), error) {
 	id := sha256.Sum256([]byte(conf))
 	socksMu.Lock()
 	defer socksMu.Unlock()
@@ -43,14 +51,15 @@ func acquire(conf string) (int, func(), error) {
 	if !ok {
 		u, err := StartUserspace(conf)
 		if err != nil {
-			return 0, nil, err
+			return socksAccess{}, nil, err
 		}
 		e = &socksEntry{u: u}
 		socksRun[id] = e
 	}
 	e.refs++
 	var once sync.Once
-	return e.u.Port(), func() { once.Do(func() { release(id, e) }) }, nil
+	user, pass := e.u.Credentials()
+	return socksAccess{port: e.u.Port(), user: user, pass: pass}, func() { once.Do(func() { release(id, e) }) }, nil
 }
 
 func release(id [32]byte, e *socksEntry) {
@@ -75,11 +84,11 @@ func release(id [32]byte, e *socksEntry) {
 // SocksStart — то же, что acquire, для прямого вызова из приложения. Ссылка
 // держится до SocksStopAll.
 func SocksStart(req SocksStartRequest) (SocksStartResponse, error) {
-	port, _, err := acquire(req.Conf)
+	acc, _, err := acquire(req.Conf)
 	if err != nil {
 		return SocksStartResponse{}, err
 	}
-	return SocksStartResponse{Port: port}, nil
+	return SocksStartResponse{Port: acc.port, User: acc.user, Pass: acc.pass}, nil
 }
 
 // SocksStopAll гасит все поднятые амнезии, сколько бы ссылок на них ни

@@ -49,7 +49,7 @@ func PrepareXrayJSON(xrayJSON string) (string, func(), error) {
 		}
 		delete(ob, ConfKey)
 		found++
-		port, rel, err := acquire(conf)
+		acc, rel, err := acquire(conf)
 		if err != nil {
 			releaseAll()
 			return "", noop, fmt.Errorf("амнезия для %v не поднялась: %w", ob["tag"], err)
@@ -57,7 +57,11 @@ func PrepareXrayJSON(xrayJSON string) (string, func(), error) {
 		releases = append(releases, rel)
 		ob["protocol"] = "socks"
 		ob["settings"] = map[string]any{
-			"servers": []any{map[string]any{"address": "127.0.0.1", "port": port}},
+			"servers": []any{map[string]any{
+				"address": "127.0.0.1",
+				"port":    acc.port,
+				"users":   []any{map[string]any{"user": acc.user, "pass": acc.pass}},
+			}},
 		}
 	}
 	if found == 0 {

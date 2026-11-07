@@ -50,6 +50,10 @@ func TestPrepareStartsAndRewritesOutbound(t *testing.T) {
 				Servers []struct {
 					Address string `json:"address"`
 					Port    int    `json:"port"`
+					Users   []struct {
+						User string `json:"user"`
+						Pass string `json:"pass"`
+					} `json:"users"`
 				} `json:"servers"`
 			} `json:"settings"`
 		} `json:"outbounds"`
@@ -63,6 +67,12 @@ func TestPrepareStartsAndRewritesOutbound(t *testing.T) {
 	}
 	if root.Outbounds[0].Protocol != "vless" {
 		t.Fatal("соседний outbound испорчен")
+	}
+	// Ядро получает логин и пароль socks этого запуска -- без них socks
+	// амнезии никого не пускает (07.11).
+	users := ob.Settings.Servers[0].Users
+	if len(users) != 1 || len(users[0].User) != 32 || len(users[0].Pass) != 32 {
+		t.Fatalf("логин/пароль socks не переданы ядру: %+v", users)
 	}
 }
 

@@ -52,7 +52,8 @@ func echoServer(t *testing.T) string {
 
 func socksClient(t *testing.T, s *SocksServer) proxy.Dialer {
 	t.Helper()
-	d, err := proxy.SOCKS5("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(s.Port())), nil, proxy.Direct)
+	user, pass := s.Credentials()
+	d, err := proxy.SOCKS5("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(s.Port())), &proxy.Auth{User: user, Password: pass}, proxy.Direct)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,6 +121,31 @@ func TestSocksRefusedTargetFailsFast(t *testing.T) {
 
 // associate проходит рукопожатие UDP ASSOCIATE и возвращает управляющее
 // соединение и адрес ретранслятора.
+// greetWithAuth -- приветствие socks5 с логином и паролем этого сервера.
+func greetWithAuth(t *testing.T, c net.Conn, s *SocksServer) {
+	t.Helper()
+	_, _ = c.Write([]byte{5, 1, 2})
+	greet := make([]byte, 2)
+	if _, err := io.ReadFull(c, greet); err != nil {
+		t.Fatal(err)
+	}
+	if greet[1] != 2 {
+		t.Fatalf("сервер выбрал метод %d, а не логин/пароль", greet[1])
+	}
+	user, pass := s.Credentials()
+	msg := append([]byte{1, byte(len(user))}, user...)
+	msg = append(msg, byte(len(pass)))
+	msg = append(msg, pass...)
+	_, _ = c.Write(msg)
+	st := make([]byte, 2)
+	if _, err := io.ReadFull(c, st); err != nil {
+		t.Fatal(err)
+	}
+	if st[1] != 0 {
+		t.Fatalf("логин/пароль не приняты, код %d", st[1])
+	}
+}
+
 func associate(t *testing.T, s *SocksServer) (net.Conn, *net.UDPAddr) {
 	t.Helper()
 	c, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(s.Port())))
@@ -127,11 +153,7 @@ func associate(t *testing.T, s *SocksServer) (net.Conn, *net.UDPAddr) {
 		t.Fatal(err)
 	}
 	_ = c.SetDeadline(time.Now().Add(3 * time.Second))
-	_, _ = c.Write([]byte{5, 1, 0})
-	greet := make([]byte, 2)
-	if _, err := io.ReadFull(c, greet); err != nil {
-		t.Fatal(err)
-	}
+	greetWithAuth(t, c, s)
 	_, _ = c.Write([]byte{5, 3, 0, 1, 0, 0, 0, 0, 0, 0})
 	reply := make([]byte, 10)
 	if _, err := io.ReadFull(c, reply); err != nil {
@@ -246,9 +268,7 @@ func TestSocksRejectsBind(t *testing.T) {
 	}
 	defer c.Close()
 	_ = c.SetDeadline(time.Now().Add(3 * time.Second))
-	_, _ = c.Write([]byte{5, 1, 0})
-	greet := make([]byte, 2)
-	_, _ = io.ReadFull(c, greet)
+	greetWithAuth(t, c, s)
 	_, _ = c.Write([]byte{5, 2, 0, 1, 0, 0, 0, 0, 0, 0})
 	reply := make([]byte, 2)
 	if _, err := io.ReadFull(c, reply); err != nil {
@@ -267,5 +287,73 @@ func TestSocksListensOnLoopbackOnly(t *testing.T) {
 	defer s.Close()
 	if ip := s.ln.Addr().(*net.TCPAddr).IP; !ip.IsLoopback() {
 		t.Fatalf("socks слушает не только 127.0.0.1: %v", ip)
+	}
+}
+
+// Без логина и пароля -- отказ на приветствии: найти порт перебором
+// 127.0.0.1 мало (07.11, проверка на взлом).
+func TestSocksRejectsNoAuth(t *testing.T) {
+	s, err := ServeSocks(plainNetwork{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	c, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(s.Port())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	_ = c.SetDeadline(time.Now().Add(3 * time.Second))
+	_, _ = c.Write([]byte{5, 1, 0})
+	greet := make([]byte, 2)
+	if _, err := io.ReadFull(c, greet); err != nil {
+		t.Fatal(err)
+	}
+	if greet[1] != 0xFF {
+		t.Fatalf("ждал 0xFF (нет метода), пришёл %d", greet[1])
+	}
+	// И через обычного клиента без пароля -- тоже нет.
+	d, err := proxy.SOCKS5("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(s.Port())), nil, proxy.Direct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conn, err := d.Dial("tcp", echoServer(t)); err == nil {
+		conn.Close()
+		t.Fatal("соединение без пароля прошло")
+	}
+}
+
+func TestSocksRejectsWrongPassword(t *testing.T) {
+	s, err := ServeSocks(plainNetwork{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	user, _ := s.Credentials()
+	d, err := proxy.SOCKS5("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(s.Port())), &proxy.Auth{User: user, Password: "wrong"}, proxy.Direct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conn, err := d.Dial("tcp", echoServer(t)); err == nil {
+		conn.Close()
+		t.Fatal("соединение с неверным паролем прошло")
+	}
+}
+
+func TestSocksCredentialsRandomPerServer(t *testing.T) {
+	a, err := ServeSocks(plainNetwork{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	b, err := ServeSocks(plainNetwork{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	ua, pa := a.Credentials()
+	ub, pb := b.Credentials()
+	if len(ua) != 32 || len(pa) != 32 || ua == ub || pa == pb {
+		t.Fatalf("логин/пароль не случайные: %q/%q и %q/%q", ua, pa, ub, pb)
 	}
 }
